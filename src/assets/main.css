@@ -1,0 +1,11 @@
+* {
+  box-sizing: border-box;
+}
+
+#app {
+  max-width: 1280px;
+  margin: 0 auto;
+  font-weight: normal;
+  height: 100%;
+}
+
