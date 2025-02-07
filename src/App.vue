@@ -10,7 +10,7 @@ const formRef = ref()
 const monthlyPayments = ref([])
 
 const loanForm = reactive({
-  amount: 139,
+  amount: 100,
   term: 30,
   rate: 5.45,
   //还款方式
@@ -22,20 +22,19 @@ const rules = {
   amount: [
     {
       required: true,
-      message: '金额必须大于一万元',
+      message: '金额必须大于0',
       trigger: 'blur',
       type: 'number',
-      min: 1
+      min: 0
     }
   ],
   term: [
     {
       required: true,
-      message: '年限范围在 1~30 年之间',
+      message: '年限必须大于0',
       trigger: 'blur',
       type: 'number',
-      min: 1,
-      max: 30
+      min: 0
     }
   ],
   rate: [
@@ -110,27 +109,21 @@ const advanceRepaymentFormDatas = reactive([
   {
     amount: 30,
     date: dayjs('2023-12-01').valueOf(),
-    rate: 4.2,
-    key: uniqueId()
-  },
-  {
-    amount: 10,
-    date: dayjs('2024-12-01').valueOf(),
-    rate: 4.2,
-    key: uniqueId()
-  },
-  {
-    amount: 10,
-    date: dayjs('2025-12-01').valueOf(),
-    rate: 4.2,
+    rate: 3.3,
     key: uniqueId()
   }
 ])
+
 const advanceRepaymentForms = ref([])
+
+function onAdvanceRepaymentFormDateChange() {
+  advanceRepaymentFormDatas.sort((a, b) => a.date - b.date)
+}
 
 function addAdvanceRepaymentForm() {
   advanceRepaymentFormDatas.push({
     amount: null,
+
     date: null,
     rate: null,
     key: uniqueId()
@@ -186,7 +179,10 @@ async function computedMonthlyPayments() {
           loanForm.amount * 10000 -
             flatten(repaidData)
               .slice(0, index + 1)
-              .reduce((a, b) => a + b.principal, 0),
+              .reduce((a, b) => a + b.principal, 0) -
+            advanceRepaymentFormDatas
+              .filter(form => dayjs(form.date).isBefore(dayjs(loanForm.beginMonth).add(index, 'month')))
+              .reduce((sum, form) => sum + (form.amount || 0) * 10000, 0),
           2
         )
       }
@@ -197,9 +193,9 @@ async function computedMonthlyPayments() {
 
 <template>
   <n-config-provider :locale="zhCN" :date-locale="dateZhCN">
-    <n-flex id="container" vertical style="height: 100vh; padding: 32px">
-      <n-flex>
-        <div style="flex: 1">
+    <n-flex id="container" style="height: 100vh; gap: 16px; padding: 16px;">
+      <n-flex vertical style="flex: 1; height: 100%;">
+        <div>
           <n-h3>房贷计算器</n-h3>
           <n-form
             ref="formRef"
@@ -226,7 +222,7 @@ async function computedMonthlyPayments() {
                 :show-button="false"
                 max="30"
                 min="1"
-                :precision="0"
+                :precision="2"
               >
                 <template #suffix>年</template>
               </n-input-number>
@@ -255,29 +251,39 @@ async function computedMonthlyPayments() {
           </n-form>
         </div>
 
-        <div style="flex: 1">
-          <n-h3>
-            <n-button type="primary" @click="addAdvanceRepaymentForm">提前还款</n-button>
+        <n-h3>
+            <n-space justify="space-between">
+              <div>
+                <n-button type="primary" @click="addAdvanceRepaymentForm">新增提前还款</n-button>
+                <n-text type="info"> (如果输入金额为0，则只调整利率) </n-text>
+              </div>
+              <n-button type="primary" @click="computedMonthlyPayments">开始计算</n-button>
+            </n-space>
           </n-h3>
+
+        <div style="flex: 1; overflow-y: auto;">
           <advance-repayment-form
             v-for="(form, index) in advanceRepaymentFormDatas"
             ref="advanceRepaymentForms"
             :key="form.key"
             :form-data="form"
             @delete="advanceRepaymentFormDatas.splice(index, 1)"
+            @date-change="onAdvanceRepaymentFormDateChange"
           ></advance-repayment-form>
         </div>
+
       </n-flex>
 
-      <n-space justify="center">
-        <n-button type="primary" @click="computedMonthlyPayments">开始计算</n-button>
-      </n-space>
+      <div style="flex: 1">
+        <n-h3>计算结果</n-h3>
 
-      <n-h3>计算结果</n-h3>
-
-      <n-scrollbar style="flex: 1; overflow-y: auto">
-        <n-data-table :data="monthlyPayments" :columns="columns" bordered></n-data-table>
-      </n-scrollbar>
+        <n-data-table
+          max-height="80vh"
+          :data="monthlyPayments"
+          :columns="columns"
+          bordered
+        ></n-data-table>
+      </div>
     </n-flex>
   </n-config-provider>
 </template>

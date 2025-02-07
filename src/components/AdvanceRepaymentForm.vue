@@ -8,7 +8,8 @@ defineProps({
   }
 })
 
-const emit = defineEmits(['delete'])
+
+const emit = defineEmits(['delete', 'date-change'])
 
 const formRef = ref()
 
@@ -16,12 +17,13 @@ const rules = {
   amount: [
     {
       required: true,
-      message: '金额必须大于一万元',
+      message: '金额必须大于等于0(等于0只调整利率)',
       trigger: 'blur',
       type: 'number',
-      min: 1
+      min: 0
     }
   ],
+
   date: [
     {
       required: true,
@@ -58,14 +60,14 @@ defineExpose({
         v-model:value="formData.amount"
         placeholder="请输入提前还款金额"
         :show-button="false"
-        :precision="0"
-        min="1"
+        :precision="2"
       >
         <template #suffix>万元</template>
       </n-input-number>
+
     </n-form-item>
     <n-form-item label="提前还款日期" path="date">
-      <n-date-picker v-model:value="formData.date" type="month"></n-date-picker>
+      <n-date-picker v-model:value="formData.date" type="month" @update:value="emit('date-change', $event)"></n-date-picker>
     </n-form-item>
     <n-form-item label="新利率" path="rate">
       <n-input-number
