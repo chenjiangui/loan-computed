@@ -11,7 +11,7 @@ const monthlyPayments = ref([])
 
 const loanForm = reactive({
   amount: 100,
-  term: 30,
+  term: 360,
   rate: 5.45,
   //还款方式
   repayType: '等额本息',
@@ -31,10 +31,10 @@ const rules = {
   term: [
     {
       required: true,
-      message: '年限必须大于0',
+      message: '期数必须大于0',
       trigger: 'blur',
       type: 'number',
-      min: 0
+      min: 1,
     }
   ],
   rate: [
@@ -140,7 +140,7 @@ async function computedMonthlyPayments() {
   // 偿还数据的二维数组
   repaidData.length = 0
   repaidData.push(
-    calculateMonthlyPayments(loanForm.amount * 10000, loanForm.rate, loanForm.term * 12)
+    calculateMonthlyPayments(loanForm.amount * 10000, loanForm.rate, loanForm.term)
   )
 
   for (let index = 0; index < advanceRepaymentFormDatas.length; index++) {
@@ -162,7 +162,7 @@ async function computedMonthlyPayments() {
     const advanceRepaymentData = calculateMonthlyPayments(
       loanForm.amount * 10000 - repaidPrincipal,
       advanceForm.rate,
-      loanForm.term * 12 - reduce(repaidData, (a, b) => a + b.length, 0)
+      loanForm.term - reduce(repaidData, (a, b) => a + b.length, 0)
     )
     repaidData.push(advanceRepaymentData)
   }
@@ -209,22 +209,22 @@ async function computedMonthlyPayments() {
                 v-model:value="loanForm.amount"
                 placeholder="请输入贷款金额"
                 :show-button="false"
-                :precision="0"
-                min="1"
+                :precision="2"
+                min="0"
               >
                 <template #suffix>万元</template>
               </n-input-number>
             </n-form-item>
-            <n-form-item label="贷款年限" path="term">
+            <n-form-item label="贷款期数" path="term">
               <n-input-number
                 v-model:value="loanForm.term"
-                placeholder="请输入贷款年限"
+                placeholder="请输入贷款期数"
                 :show-button="false"
-                max="30"
+                max="360"
                 min="1"
-                :precision="2"
+                :precision="0"
               >
-                <template #suffix>年</template>
+                <template #suffix>期</template>
               </n-input-number>
             </n-form-item>
             <n-form-item label="贷款利率" path="rate">
