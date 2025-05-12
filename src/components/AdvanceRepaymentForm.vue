@@ -41,6 +41,14 @@ const rules = {
       min: 0.01,
       max: 100
     }
+  ],
+  reduceType: [
+    {
+      required: true,
+      message: '请选择还款方式',
+      trigger: 'change',
+      type: 'string'
+    }
   ]
 }
 
@@ -80,6 +88,12 @@ defineExpose({
       >
         <template #suffix>%</template>
       </n-input-number>
+    </n-form-item>
+    <n-form-item label="还款方式" path="reduceType">
+      <n-radio-group v-model:value="formData.reduceType">
+        <n-radio value="reduceTerm">减少年限</n-radio>
+        <n-radio value="reducePayment">减少月供</n-radio>
+      </n-radio-group>
     </n-form-item>
     <n-form-item>
       <n-button type="error" @click="emit('delete')">删除</n-button>
