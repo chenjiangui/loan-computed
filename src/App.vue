@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { chain, flatten, reduce, round, take, uniqueId } from 'lodash'
 import { zhCN, dateZhCN } from 'naive-ui'
 import dayjs from 'dayjs'
@@ -296,6 +296,14 @@ function calculateNewPaymentPlan(remainingLoan, rate, term, repayType, reference
 
 // 主要计算函数：计算考虑提前还款后的月供详情
 async function computedMonthlyPayments() {
+  // 缓存数据到localStorage
+  try {
+    localStorage.setItem('loanForm', JSON.stringify(loanForm))
+    localStorage.setItem('advanceRepaymentFormDatas', JSON.stringify(advanceRepaymentFormDatas))
+  } catch (e) {
+    console.warn('缓存数据失败', e)
+  }
+
   // 首先验证所有表单
   try {
     await formRef.value?.validate()
@@ -434,6 +442,31 @@ async function computedMonthlyPayments() {
   // 最终格式化输出
   monthlyPayments.value = formatMonthlyPaymentsForTable(repaidData, loanForm, advanceRepaymentFormDatas)
 }
+
+onMounted(() => {
+  try {
+    const loanFormCache = localStorage.getItem('loanForm')
+    const advanceRepaymentCache = localStorage.getItem('advanceRepaymentFormDatas')
+    if (loanFormCache) {
+      const parsed = JSON.parse(loanFormCache)
+      Object.assign(loanForm, parsed)
+      // 日期字段特殊处理
+      if (parsed.beginMonth) {
+        loanForm.beginMonth = parsed.beginMonth
+      }
+    }
+    if (advanceRepaymentCache) {
+      const arr = JSON.parse(advanceRepaymentCache)
+      advanceRepaymentFormDatas.splice(0, advanceRepaymentFormDatas.length, ...arr.map(item => ({
+        ...item,
+        // 日期字段特殊处理
+        date: item.date ? item.date : null
+      })))
+    }
+  } catch (e) {
+    console.warn('读取缓存失败', e)
+  }
+})
 </script>
 
 <template>
