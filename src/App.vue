@@ -104,6 +104,54 @@ function calculateMonthlyPayments(loanAmount, interestRate, months) {
   return payments
 }
 
+/**
+ * 计算每个月还款的利息和本金的数组 (等额本金)
+ * @param {number} loanAmount - 贷款金额 (单位: 元)
+ * @param {number} interestRate - 年利率 (百分比)
+ * @param {number} months - 贷款总月数
+ * @returns {Array} 每个月还款的利息和本金的对象数组 { interest: number, principal: number }
+ */
+function calculateMonthlyPaymentsByPrincipal(loanAmount, interestRate, months) {
+  // 检查无效输入以防止错误
+  if (loanAmount <= 0 || interestRate <= 0 || months <= 0) {
+    console.warn('calculateMonthlyPaymentsByPrincipal: 无效输入', { loanAmount, interestRate, months })
+    return []
+  }
+
+  const monthlyInterestRate = interestRate / 100 / 12
+  // 每月应还本金
+  const monthlyPrincipal = loanAmount / months
+
+  var payments = []
+  var remainingLoan = loanAmount
+
+  for (var i = 0; i < months; i++) {
+    var interest = remainingLoan * monthlyInterestRate
+    var principal = monthlyPrincipal
+
+    // 处理最后一期可能的舍入误差
+    if (i === months - 1) {
+      principal = remainingLoan
+    }
+
+    remainingLoan -= principal
+    if (remainingLoan < 1e-2) {
+      remainingLoan = 0
+    }
+
+    payments.push({
+      interest: interest,
+      principal: principal
+    })
+
+    if (remainingLoan <= 0) {
+      break
+    }
+  }
+
+  return payments
+}
+
 // 辅助函数：计算剩余所需期数
 function calculateRemainingTerm(loanAmount, interestRate, monthlyPayment) {
   // 基本验证
@@ -236,6 +284,16 @@ function addAdvanceRepaymentForm() {
 // 保存计算出的分段还款数据（二维数组）
 const repaidData = reactive([])
 
+// 辅助函数：根据还款方式计算新的还款计划
+function calculateNewPaymentPlan(remainingLoan, rate, term, repayType, referencePayment = null) {
+  if (repayType === '等额本息') {
+    return calculateMonthlyPayments(remainingLoan, rate, term)
+  } else {
+    // 等额本金方式
+    return calculateMonthlyPaymentsByPrincipal(remainingLoan, rate, term)
+  }
+}
+
 // 主要计算函数：计算考虑提前还款后的月供详情
 async function computedMonthlyPayments() {
   // 首先验证所有表单
@@ -244,8 +302,7 @@ async function computedMonthlyPayments() {
     await Promise.all(advanceRepaymentForms.value.map((form) => form.validate()))
   } catch (validationError) {
     console.error('表单验证失败:', validationError)
-    monthlyPayments.value = [] // 验证失败时清空结果
-    // 此处可以添加给用户的提示信息
+    monthlyPayments.value = []
     return
   }
 
@@ -254,13 +311,19 @@ async function computedMonthlyPayments() {
   let effectiveTotalTerm = loanForm.term // 贷款的有效总期数，会因"减少年限"而改变
 
   // 计算初始的完整还款计划
-  const initialPayments = calculateMonthlyPayments(loanForm.amount * 10000, loanForm.rate, loanForm.term)
+  const initialPayments = calculateNewPaymentPlan(
+    loanForm.amount * 10000,
+    loanForm.rate,
+    loanForm.term,
+    loanForm.repayType
+  )
+
   if (!initialPayments || initialPayments.length === 0) {
     console.error('初始贷款计算失败。')
     monthlyPayments.value = []
     return
   }
-  repaidData.push([...initialPayments]) // 从完整的初始计划开始
+  repaidData.push([...initialPayments])
 
   // 按顺序处理每一笔提前还款
   for (let index = 0; index < advanceRepaymentFormDatas.length; index++) {
@@ -271,11 +334,13 @@ async function computedMonthlyPayments() {
       console.warn(`跳过第 ${index + 1} 笔提前还款，因为缺少日期。`)
       continue
     }
-    const previousDate = index === 0 ? dayjs(loanForm.beginMonth) : advanceRepaymentFormDatas[index - 1].date
+
+    const previousDate = index === 0 ? dayjs(loanForm.beginMonth) : dayjs(advanceRepaymentFormDatas[index - 1].date)
     if (!previousDate || dayjs(advanceForm.date).isSameOrBefore(previousDate)) {
       console.warn(`跳过第 ${index + 1} 笔提前还款，因为日期顺序无效或缺少前一日期。`)
       continue
     }
+
     const diffMonth = dayjs(advanceForm.date).diff(previousDate, 'month')
     if (diffMonth < 0) {
       console.warn(`跳过第 ${index + 1} 笔提前还款，因为月份差为负。`)
@@ -286,78 +351,87 @@ async function computedMonthlyPayments() {
     const lastSegment = repaidData[repaidData.length - 1]
     if (!lastSegment) {
       console.error('计算错误：缺少前一个还款段。')
-      break // 如果状态不一致则停止处理
+      break
     }
 
-    const paymentsInPeriod = take(lastSegment, diffMonth) // 获取本期间内的计划还款
-    const principalPaidInPeriod = chain(paymentsInPeriod).map('principal').sum().value() // 计算期间内偿还的本金
-    repaidPrincipal += principalPaidInPeriod // 累加期间内本金
-    repaidPrincipal += (advanceForm.amount || 0) * 10000 // 累加提前还款金额
-    repaidData[repaidData.length - 1] = paymentsInPeriod // 裁剪最后一个还款段，只保留本期间的部分
+    const paymentsInPeriod = take(lastSegment, diffMonth)
+    const principalPaidInPeriod = chain(paymentsInPeriod).map('principal').sum().value()
+    repaidPrincipal += principalPaidInPeriod
+    repaidPrincipal += (advanceForm.amount || 0) * 10000
+    repaidData[repaidData.length - 1] = paymentsInPeriod
 
     // --- 计算剩余状态 ---
     const remainingLoanAfterAdvance = Math.max(0, loanForm.amount * 10000 - repaidPrincipal)
     if (remainingLoanAfterAdvance < 1e-2) {
-      // 贷款已还清
-      effectiveTotalTerm = reduce(repaidData, (sum, segment) => sum + segment.length, 0) // 更新最终有效总期数
-      // 如果需要在表格中明确表示结束，可以在 formatMonthlyPaymentsForTable 中处理，此处无需添加空段
-      break // 停止处理后续提前还款
+      effectiveTotalTerm = reduce(repaidData, (sum, segment) => sum + segment.length, 0)
+      break
     }
-    const totalMonthsPaid = reduce(repaidData, (sum, segment) => sum + segment.length, 0) // 计算到目前为止的总已付期数
 
-    // --- 根据提前还款类型计算下一个还款段 ---
-    let newSegmentPayments = []
-    let segmentTerm = 0 // 下一个还款段的期数
-    const currentRate = advanceForm.rate // 当前生效的利率
+    const totalMonthsPaid = reduce(repaidData, (sum, segment) => sum + segment.length, 0)
+    const currentRate = advanceForm.rate || loanForm.rate // 使用新利率，如果没有设置则使用原利率
 
+    // --- 根据提前还款类型计算新的还款计划 ---
+    let newSegmentTerm = 0
     if (advanceForm.reduceType === 'reduceTerm') {
-      // --- 减少年限逻辑 ---
-      const referenceMonthlyPayment = getReduceTermReferencePayment(paymentsInPeriod, index, initialPayments, repaidData)
-      const minPaymentRequired = remainingLoanAfterAdvance * (currentRate / 100 / 12) // 维持贷款所需的最低月供（仅利息）
-
-      if (referenceMonthlyPayment <= minPaymentRequired + 1e-9 || referenceMonthlyPayment <= 0) {
-        // 参考月供不足以支付利息或无效，回退到"减少月供"逻辑
-        console.warn(`第 ${index + 1} 笔提前还款：参考月供不足，回退到减少月供模式。`)
-        segmentTerm = Math.max(0, effectiveTotalTerm - totalMonthsPaid)
-      } else {
-        // 计算新的剩余期数
-        segmentTerm = calculateRemainingTerm(remainingLoanAfterAdvance, currentRate, referenceMonthlyPayment)
-        if (segmentTerm !== Infinity && segmentTerm >= 0) {
-          // 成功计算出新期数，更新有效总期数
-          effectiveTotalTerm = totalMonthsPaid + segmentTerm
+      // 减少年限：保持月供基本不变（等额本息）或保持每月还款本金不变（等额本金）
+      if (loanForm.repayType === '等额本息') {
+        // 等额本息：基于上一期月供计算新的期数
+        const referencePayment = getReduceTermReferencePayment(paymentsInPeriod, index, initialPayments, repaidData)
+        const minPaymentRequired = remainingLoanAfterAdvance * (currentRate / 100 / 12)
+        
+        if (referencePayment <= minPaymentRequired + 1e-9 || referencePayment <= 0) {
+          newSegmentTerm = Math.max(0, effectiveTotalTerm - totalMonthsPaid)
         } else {
-          // 计算剩余期数出错，也回退到"减少月供"逻辑
-           console.warn(`第 ${index + 1} 笔提前还款：计算剩余期数失败，回退到减少月供模式。`)
-           segmentTerm = Math.max(0, effectiveTotalTerm - totalMonthsPaid)
+          newSegmentTerm = calculateRemainingTerm(remainingLoanAfterAdvance, currentRate, referencePayment)
+        }
+      } else {
+        // 等额本金：保持每月还款本金不变
+        const lastPayment = paymentsInPeriod[paymentsInPeriod.length - 1]
+        if (lastPayment) {
+          const monthlyPrincipal = lastPayment.principal
+          newSegmentTerm = Math.ceil(remainingLoanAfterAdvance / monthlyPrincipal)
+        } else {
+          // 如果没有参考还款，则基于剩余本金和剩余期数计算
+          newSegmentTerm = Math.ceil(remainingLoanAfterAdvance / (remainingLoanAfterAdvance / (effectiveTotalTerm - totalMonthsPaid)))
         }
       }
     } else {
-      // --- 减少月供逻辑 ---
-      segmentTerm = Math.max(0, effectiveTotalTerm - totalMonthsPaid)
+      // 减少月供：保持剩余期数不变
+      newSegmentTerm = Math.max(0, effectiveTotalTerm - totalMonthsPaid)
     }
 
-    // --- 生成新的还款段 ---
-    if (segmentTerm > 0 && remainingLoanAfterAdvance > 1e-2) {
-      // 如果还有剩余期数且贷款未还清，则计算新的还款段
-      newSegmentPayments = calculateMonthlyPayments(remainingLoanAfterAdvance, currentRate, segmentTerm)
+    // 确保计算出的期数有效
+    if (newSegmentTerm === Infinity || newSegmentTerm < 0) {
+      console.warn(`第 ${index + 1} 笔提前还款：计算剩余期数失败，使用剩余期数。`)
+      newSegmentTerm = Math.max(0, effectiveTotalTerm - totalMonthsPaid)
+    }
+
+    // 生成新的还款计划
+    if (newSegmentTerm > 0 && remainingLoanAfterAdvance > 1e-2) {
+      const newSegmentPayments = calculateNewPaymentPlan(
+        remainingLoanAfterAdvance,
+        currentRate,
+        newSegmentTerm,
+        loanForm.repayType
+      )
+
       if (newSegmentPayments && newSegmentPayments.length > 0) {
-        repaidData.push(newSegmentPayments) // 添加新的还款段
+        repaidData.push(newSegmentPayments)
+        effectiveTotalTerm = totalMonthsPaid + newSegmentTerm
       } else {
         console.warn(
-          `为第 ${index + 1} 次提前还款后的段计算出 0 笔付款，但期数=${segmentTerm} 且剩余本金=${remainingLoanAfterAdvance}`
+          `为第 ${index + 1} 次提前还款后的段计算出 0 笔付款，但期数=${newSegmentTerm} 且剩余本金=${remainingLoanAfterAdvance}`
         )
-        // 这可能表示贷款实际上比计算出的期数更早还清，或者 calculateMonthlyPayments 有问题
-        effectiveTotalTerm = totalMonthsPaid // 如果未生成付款，调整有效总期数
-        break // 如果计算未产生付款，则停止处理
+        effectiveTotalTerm = totalMonthsPaid
+        break
       }
     } else {
-      // 剩余期数为0或负数，或贷款已还清
-      effectiveTotalTerm = totalMonthsPaid // 准确更新最终的有效总期数
-      break // 停止处理
+      effectiveTotalTerm = totalMonthsPaid
+      break
     }
-  } // 提前还款循环结束
+  }
 
-  // --- 最终格式化输出 ---
+  // 最终格式化输出
   monthlyPayments.value = formatMonthlyPaymentsForTable(repaidData, loanForm, advanceRepaymentFormDatas)
 }
 </script>
@@ -414,7 +488,7 @@ async function computedMonthlyPayments() {
             <n-form-item label="还款方式">
               <n-radio-group v-model:value="loanForm.repayType">
                 <n-radio value="等额本息">等额本息</n-radio>
-                <!-- <n-radio value="等额本金">等额本金</n-radio> -->
+                <n-radio value="等额本金">等额本金</n-radio>
               </n-radio-group>
             </n-form-item>
             <n-form-item label="开始还款日期">
