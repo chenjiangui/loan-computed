@@ -5,6 +5,7 @@ import { zhCN, dateZhCN } from 'naive-ui'
 import dayjs from 'dayjs'
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 import AdvanceRepaymentForm from '@/components/AdvanceRepaymentForm.vue'
+import GithubIcon from '@/components/GithubIcon.vue'
 
 dayjs.extend(isSameOrBefore)
 
@@ -475,7 +476,14 @@ onMounted(() => {
       <n-flex vertical style="flex: 1; height: 100%; overflow-y: auto;">
         <!-- 贷款基础信息表单 -->
         <div>
-          <n-h3>房贷计算器</n-h3>
+          <n-h3>
+            <n-space align="center">
+              <span>房贷计算器</span>
+              <n-button quaternary circle tag="a" href="https://github.com/chenjiangui/loan-computed" target="_blank" style="margin-left: 8px;">
+                <GithubIcon />
+              </n-button>
+            </n-space>
+          </n-h3>
           <n-form
             ref="formRef"
             label-placement="left"
